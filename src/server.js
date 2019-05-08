@@ -1,11 +1,25 @@
-import express from 'express';
 import bodyParser from 'body-parser';
 import cors from 'cors';
-import path from 'path';
+import express from 'express';
+import http from 'http';
+import mongoose from 'mongoose';
 import morgan from 'morgan';
+import path from 'path';
+import socketio from 'socket.io';
+
+import * as Notes from './note_controller';
+
+
+// DB Setup
+const mongoURI = process.env.MONGODB_URI || 'mongodb://localhost/notes';
+mongoose.connect(mongoURI, { useNewUrlParser: true });
+// set mongoose promises to es6 default
+mongoose.Promise = global.Promise;
 
 // initialize
 const app = express();
+const server = http.createServer(app);
+const io = socketio(server);
 
 // enable/disable cross origin resource sharing if necessary
 app.use(cors());
@@ -36,6 +50,33 @@ app.get('/', (req, res) => {
 // START THE SERVER
 // =============================================================================
 const port = process.env.PORT || 9090;
-app.listen(port);
-
+server.listen(port);
 console.log(`listening on: ${port}`);
+
+
+io.on('connection', (socket) => {
+  Notes.getNotes().then((result) => {
+    socket.emit('notes', result);
+  });
+
+  const pushNotes = () => {
+    Notes.getNotes().then((result) => {
+      io.sockets.emit('notes', result);
+    });
+  };
+
+  socket.on('createNote', (fields) => {
+    const newNote = Notes.createNote(fields);
+    return newNote;
+  });
+
+  socket.on('updateNote', (id, fields) => {
+    Notes.updateNote(id, fields).then(() => {
+      pushNotes();
+    });
+  });
+
+  socket.on('deleteNote', (id) => {
+    Notes.deleteNote(id);
+  });
+});
